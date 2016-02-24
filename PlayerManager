@@ -1,0 +1,170 @@
+local PlayerManager = {}
+
+-- ROBLOX Services
+local Players = game.Players
+local PointsService = game:GetService("PointsService")
+
+-- Game Services
+local Configurations = require(game.ServerStorage.Configurations)
+local Events = game.ReplicatedStorage.Events
+local ResetMouseIcon = Events.ResetMouseIcon
+local TeamManager = require(script.Parent.TeamManager)
+local DisplayManager = require(script.Parent.DisplayManager)
+
+-- Local Variables
+local PlayersCanSpawn = false
+local GameRunning = false
+local HitArray = { }
+local ScoreArray = { }
+
+-- Local Functions
+local function OnPlayerAdded(player)
+	-- Setup leaderboard stats
+	local leaderstats = Instance.new("Model", player)
+	leaderstats.Name = "leaderstats"
+	
+	local KWA = Instance.new("StringValue", leaderstats)
+	if Configurations.GRANT_ASSISTS then
+		KWA.Name = "KO - WO - A"
+		KWA.Value = "0 - 0 - 0"
+	else
+		KWA.Name = "KO - WO"
+		KWA.Value = "0 - 0"
+	end
+	
+	ScoreArray[player] = { 0, 0, 0 } -- KOs, WOs, Assists
+	
+	TeamManager:AssignPlayerToTeam(player)
+	
+	player.CharacterAdded:connect(function(character)
+		character:WaitForChild("Humanoid").Died:connect(function()
+			PlayerManager:PlayerDied(player)
+			wait(Configurations.RESPAWN_TIME)
+			if GameRunning then
+				player:LoadCharacter()
+			end
+		end)
+	end)
+	
+	if PlayersCanSpawn then
+		player:LoadCharacter()
+	else
+		DisplayManager:StartIntermission(player)
+	end
+end
+
+local function OnPlayerRemoving(player)
+	TeamManager:RemovePlayer(player)
+end
+
+local function UpdatePlayerScore(player)
+	local KOString = tostring(ScoreArray[player][1])
+	local WOString = tostring(ScoreArray[player][2])
+	local AssistString = tostring(ScoreArray[player][3])
+	
+	if not Configurations.GRANT_ASSISTS then
+		if KOString:len() < WOString:len() then
+			while KOString:len() < WOString:len() do
+				KOString = " " .. KOString
+			end
+		else
+			while WOString:len() < WOString:len() do
+				WOString = WOString .. " "
+			end
+		end
+		player.leaderstats["KO - WO"].Value = KOString .. " - " .. WOString
+	else
+		player.leaderstats["KO - WO - A"].Value = KOString .. " - " .. WOString .. " - " .. AssistString
+	end
+end
+
+-- Functions
+function PlayerManager:SetGameRunning(running)
+	GameRunning = running
+end
+
+function PlayerManager:AllowPlayerSpawn(allow)
+	PlayersCanSpawn = allow
+end
+
+function PlayerManager:ClearPlayerScores()
+	for _, player in ipairs(Players:GetPlayers()) do
+		local leaderstats = player:FindFirstChild("leaderstats")
+		if leaderstats then
+			local KWA
+			if Configurations.GRANT_ASSISTS then
+				KWA = leaderstats:FindFirstChild("KO - WO - A")
+				if KWA then
+					KWA.Value = "0 - 0 - 0"
+				end
+			else
+				KWA = leaderstats:FindFirstChild("KO - WO")
+				if KWA then
+					KWA.Value = "0 - 0"
+				end
+			end
+		end
+	end
+end
+
+function PlayerManager:LoadPlayers()
+	for _, player in pairs(Players:GetPlayers()) do
+		player:LoadCharacter()
+	end
+end
+
+function PlayerManager:DestroyPlayers()
+	for _, player in pairs(Players:GetPlayers()) do
+		player.Character:Destroy()
+		for _, item in pairs(player.Backpack:GetChildren()) do
+			item:Destroy()
+		end
+	end
+	ResetMouseIcon:FireAllClients()
+end
+
+function PlayerManager:PlayerHit(hitPlayer, hittingPlayer)
+	if hitPlayer == hittingPlayer then
+		return
+	end
+	
+	if not HitArray[hitPlayer] then
+		HitArray[hitPlayer] = { }
+	end
+	
+	for i = 1, #HitArray[hitPlayer] do
+		if HitArray[hitPlayer][i]== hittingPlayer then
+			return
+		end
+	end
+	table.insert(HitArray[hitPlayer], hittingPlayer)
+end
+
+function PlayerManager:PlayerDied(player)
+	if HitArray[player] then
+		for i = #HitArray[player], 1, -1 do
+			local hittingPlayer = HitArray[player][i]
+			if hittingPlayer ~= player then
+				if i == #HitArray[player] then
+					ScoreArray[hittingPlayer][1] = ScoreArray[hittingPlayer][1] + 1
+					TeamManager:AddTeamScore(hittingPlayer.TeamColor, 1)
+					spawn(function() pcall(function() PointsService:AwardPoints(hittingPlayer.userId, Configurations.PLAYER_POINTS_PER_KO) end) end)
+				else
+					ScoreArray[hittingPlayer][3] = ScoreArray[hittingPlayer][3] + 1
+					spawn(function() pcall(function() PointsService:AwardPoints(hittingPlayer.userId, Configurations.PLAYER_POINTS_PER_ASSIST) end) end)
+				end
+				UpdatePlayerScore(hittingPlayer)
+			end
+		end
+	end
+	
+	ScoreArray[player][2] = ScoreArray[player][2] + 1
+	HitArray[player] = nil
+	UpdatePlayerScore(player)
+end
+
+-- Event Bindings
+Players.PlayerAdded:connect(OnPlayerAdded)
+Players.PlayerRemoving:connect(OnPlayerRemoving)
+
+return PlayerManager
