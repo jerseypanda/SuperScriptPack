@@ -1,0 +1,104 @@
+local GameManager = {}
+
+-- ROBLOX Services
+local Players = game.Players
+
+-- Game Services
+local Configurations = require(game.ServerStorage.Configurations)
+local TeamManager = require(script.TeamManager)
+local PlayerManager = require(script.PlayerManager)
+local MapManager = require(script.MapManager)
+local TimeManager = require(script.TimeManager)
+local DisplayManager = require(script.DisplayManager)
+
+-- Local Variables
+local IntermissionRunning = false
+local EnoughPlayers = false
+local GameRunning = false
+local Events = game.ReplicatedStorage.Events
+
+-- Functions
+function GameManager:Initialize()
+	MapManager:SaveMap(game.Workspace)
+end
+
+function GameManager:RunIntermission()
+	IntermissionRunning = true
+	TimeManager:StartTimer(Configurations.INTERMISSION_DURATION) -- Starts a timer used to display the intermission time
+	DisplayManager:StartIntermission()
+	EnoughPlayers = Players.NumPlayers >= Configurations.MIN_PLAYERS
+	DisplayManager:UpdateTimerInfo(true, not EnoughPlayers)
+	spawn(function()
+		repeat
+			if EnoughPlayers and Players.NumPlayers < Configurations.MIN_PLAYERS then
+				EnoughPlayers = false
+			elseif not EnoughPlayers and Players.NumPlayers >= Configurations.MIN_PLAYERS then
+				EnoughPlayers = true
+			end
+			DisplayManager:UpdateTimerInfo(true, not EnoughPlayers)
+			wait(0.5)
+		until not IntermissionRunning
+	end)
+	
+	wait(Configurations.INTERMISSION_DURATION)
+	IntermissionRunning = false
+end
+
+function GameManager:StopIntermission()
+	DisplayManager:UpdateTimerInfo(false, false)
+	DisplayManager:StopIntermission()
+end
+
+function GameManager:GameReady()
+	return EnoughPlayers
+end
+
+function GameManager:StartRound()
+	TeamManager:ClearTeamScores()
+	PlayerManager:ClearPlayerScores()
+	
+	PlayerManager:AllowPlayerSpawn(true)
+	PlayerManager:LoadPlayers()
+	
+	GameRunning = true
+	PlayerManager:SetGameRunning(true)
+	TimeManager:StartTimer(Configurations.ROUND_DURATION)
+end
+
+function GameManager:Update()
+	-- TODO: Add custom game code here
+end
+
+function GameManager:RoundOver()
+	local winningTeam = TeamManager:HasTeamWon()
+	if winningTeam then
+		DisplayManager:DisplayVictory(winningTeam)
+		return true
+	end
+	
+	if TimeManager:TimerDone() then
+		if TeamManager:AreTeamsTied() then
+			DisplayManager:DisplayVictory("Tie")
+		else
+			winningTeam = TeamManager:GetWinningTeam()
+			DisplayManager:DisplayVictory(winningTeam)
+		end
+		return true
+	end
+	return false
+end
+
+function GameManager:RoundCleanup()
+	PlayerManager:SetGameRunning(false)
+	PlayerManager:AllowPlayerSpawn(false)
+	wait(Configurations.END_GAME_WAIT)
+	PlayerManager:DestroyPlayers()
+	DisplayManager:DisplayVictory(nil)
+	if Configurations.TEAMS then
+		TeamManager:ShuffleTeams()
+	end
+	MapManager:ClearMap()
+	MapManager:LoadMap()
+end
+
+return GameManager
