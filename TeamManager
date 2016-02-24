@@ -1,0 +1,154 @@
+local TeamManager = {}
+
+-- ROBLOX Services
+local Teams = game.Teams
+local Players = game.Players
+
+-- Game Services
+local Configurations = require(game.ServerStorage.Configurations)
+local DisplayManager = require(script.Parent.DisplayManager)
+
+-- Local Variables
+local TeamPlayers = {}
+local TeamScores = {}
+
+-- Local Functions
+local function GetTeamFromColor(teamColor)
+	for _, team in ipairs(Teams:GetTeams()) do
+		if team.TeamColor == teamColor then
+			return team
+		end
+	end
+	return nil
+end
+
+-- Functions
+function TeamManager:CreateTeams()
+	local newTeam = Instance.new("Team", game.Teams)
+	newTeam.TeamColor = BrickColor.new("Bright red")
+	TeamPlayers[newTeam] = {}
+	TeamScores[newTeam] = 0
+	
+	newTeam = Instance.new("Team", game.Teams)
+	newTeam.TeamColor = BrickColor.new("Bright blue")
+	TeamPlayers[newTeam] = {}
+	TeamScores[newTeam] = 0
+end
+
+function TeamManager:CreateFFATeam()
+	local newTeamColor = BrickColor.Random()
+	while GetTeamFromColor(newTeamColor) do
+		newTeamColor = BrickColor.Random()
+	end
+	
+	local newTeam = Instance.new("Team", game.Teams)
+	newTeam.TeamColor = newTeamColor
+	TeamPlayers[newTeam] = {}
+	TeamScores[newTeam] = 0
+	return newTeam
+end
+
+function TeamManager:AssignPlayerToTeam(player)
+	local smallestTeam
+	local lowestCount = math.huge
+	for team, playerList in pairs(TeamPlayers) do
+		if #playerList < lowestCount then
+			smallestTeam = team
+			lowestCount = #playerList
+		end
+	end
+	
+	if not Configurations.TEAMS and (not smallestTeam or #TeamPlayers[smallestTeam] > 0) then
+		smallestTeam = TeamManager:CreateFFATeam()
+	end
+	
+	table.insert(TeamPlayers[smallestTeam], player)
+	player.Neutral = false
+	player.TeamColor = smallestTeam.TeamColor
+end
+
+function TeamManager:RemovePlayer(player)
+	local team = GetTeamFromColor(player.TeamColor)
+	local teamTable = TeamPlayers[team]
+	for i = 1, #teamTable do
+		if teamTable[i] == player then
+			table.remove(teamTable, i)
+			if not Configurations.TEAMS then
+				team:Destroy()
+			end
+			return
+		end
+	end
+end
+
+function TeamManager:ClearTeamScores()
+	for _, team in pairs(Teams:GetTeams()) do
+		TeamScores[team] = 0
+		if Configurations.TEAMS then
+			DisplayManager:UpdateScore(team, 0)
+		end
+	end
+end
+
+function TeamManager:AddTeamScore(teamColor, score)
+	local team = GetTeamFromColor(teamColor)
+	TeamScores[team] = TeamScores[team] + score
+	if Configurations.TEAMS then
+		DisplayManager:UpdateScore(team, TeamScores[team])
+	end
+end
+
+function TeamManager:HasTeamWon()
+	for _, team in pairs(Teams:GetTeams()) do
+		if TeamScores[team] >= Configurations.POINTS_TO_WIN then
+			return team
+		end
+	end
+	return false
+end
+
+function TeamManager:GetWinningTeam()
+	local highestScore = 0
+	local winningTeam = nil
+	for _, team in pairs(Teams:GetTeams()) do
+		if TeamScores[team] > highestScore then
+			highestScore = TeamScores[team]
+			winningTeam = team
+		end
+	end
+	return winningTeam
+end
+
+function TeamManager:AreTeamsTied()
+	local teams = Teams:GetTeams()
+	local highestScore = 0
+	local tied = false
+	for _, team in pairs(teams) do
+		if TeamScores[team] == highestScore then
+			tied = true
+		elseif TeamScores[team] > highestScore then
+			tied = false
+			highestScore = TeamScores[team]
+		end
+	end
+	return tied
+end
+
+function TeamManager:ShuffleTeams()
+	for _, team in pairs(Teams:GetTeams()) do
+		TeamPlayers[team] = {}
+	end
+	local players = Players:GetPlayers()
+	while #players > 0 do
+		local rIndex = math.random(1, #players)
+		local player = table.remove(players, rIndex)
+		TeamManager:AssignPlayerToTeam(player)
+	end
+end
+
+-- Initialization
+if Configurations.TEAMS then
+	TeamManager:CreateTeams()
+end
+
+return TeamManager
