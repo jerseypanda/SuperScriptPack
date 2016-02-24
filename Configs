@@ -1,0 +1,23 @@
+local FetchConfiguration = game.ReplicatedStorage.Events.FetchConfiguration
+
+local Configurations = {}
+
+Configurations.ROUND_DURATION = 5 * 8 -- Seconds
+Configurations.MIN_PLAYERS = 2
+Configurations.TEAMS = false
+Configurations.POINTS_TO_WIN = 15
+Configurations.INTERMISSION_DURATION = 15 -- Seconds
+Configurations.END_GAME_WAIT = 10 -- Seconds
+Configurations.RESPAWN_TIME = 5 -- Seconds
+Configurations.GRANT_ASSISTS = false
+Configurations.PLAYER_POINTS_PER_KO = 3
+Configurations.PLAYER_POINTS_PER_ASSIST = 0
+
+-- Local Functions
+local function OnFetchConfiguration(callingClient, configToFetch)
+	FetchConfiguration:FireClient(callingClient, configToFetch, Configurations[configToFetch])
+end
+
+FetchConfiguration.OnServerEvent:connect(OnFetchConfiguration)
+
+return Configurations
