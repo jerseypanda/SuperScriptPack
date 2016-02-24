@@ -1,0 +1,75 @@
+local MapManager = {}
+
+-- Game Services
+local Configurations = require(game.ServerStorage.Configurations)
+
+-- Local Variables
+local MapSave = game.ServerStorage:FindFirstChild("MapSave")
+if not MapSave then
+	MapSave = Instance.new("Folder", game.ServerStorage)
+	MapSave.Name = "MapSave"
+end
+local Spawns = { }
+
+-- Initialization
+local MapPurgeProof = game.Workspace:FindFirstChild("MapPurgeProof")
+if not MapPurgeProof then
+	MapPurgeProof = Instance.new("Folder", game.Workspace)
+	MapPurgeProof.Name = "MapPurgeProof"
+end
+
+-- Local Functions
+local function FindAndSaveSpawns(object)
+	for _, child in pairs(object:GetChildren()) do
+		if child:IsA("SpawnLocation") then
+			table.insert(Spawns, child)
+		end
+		FindAndSaveSpawns(child)
+	end
+end
+
+-- Functions
+function MapManager:SaveMap(object)
+	FindAndSaveSpawns(object)
+	for i = #Spawns, 1, -1 do
+		if Configurations.TEAMS then
+			if Spawns[i].TeamColor.Name == "Bright red" or Spawns[i].TeamColor.Name == "Bright blue" then
+				Spawns[i].Neutral = false
+				Spawns[i].Transparency = 1
+			else
+				table.remove(Spawns, i):Destroy()
+			end
+		else
+			Spawns[i].Neutral = true
+			Spawns[i].Transparency = 1
+		end
+	end
+	
+	for _, child in pairs(object:GetChildren()) do
+		if not child:IsA("Camera") and not child:IsA("Terrain") and child.Name ~= "MapPurgeProof" then
+			local copy = child:Clone()
+			if copy then
+				copy.Parent = MapSave
+			end
+		end
+	end
+end
+
+function MapManager:ClearMap()
+	for _, child in ipairs(game.Workspace:GetChildren()) do
+		if not child:IsA('Camera') and not child:IsA('Terrain') and child.Name ~= "MapPurgeProof" then
+			child:Destroy()
+		end
+	end
+end
+
+function MapManager:LoadMap()
+	spawn(function()
+		for _, child in ipairs(MapSave:GetChildren()) do
+			local copy = child:Clone()
+			copy.Parent = game.Workspace
+		end
+	end)
+end
+
+return MapManager
